@@ -1,0 +1,22 @@
+crash test on public_02_incidents: 8 x kill -9 at random times, then run to completion
+kill #1 at sim 2027-01-04T15:15:00+05:30
+kill #2 at sim 2027-01-06T12:00:00+05:30
+kill #3 at sim 2027-01-07T10:00:00+05:30
+kill #4 at sim 2027-01-09T09:00:00+05:30
+kill #5 at sim 2027-01-09T18:00:00+05:30
+kill #6 at sim 2027-01-10T16:45:00+05:30
+kill #7 at sim 2027-01-11T18:00:00+05:30
+kill #8 at sim 2027-01-13T10:00:00+05:30
+final run exited with 0
+[PASS] scenario finished 2027-01-14T00:00:00+05:30
+[PASS] every event ingested exactly once (store 324332 vs sim 324332)
+[PASS] nw_renewal: store records every applied change sim [2, 3, 4, 5, 6, 7, 8, 9] store [2, 3, 4, 5, 6, 7, 8, 9]
+[PASS] nw_kyc: store records every applied change sim [2, 3, 4, 5, 6] store [2, 3, 4, 5, 6]
+[PASS] ks_cancel: store records every applied change sim [2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16] store [2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16]
+[PASS] no change applied twice 
+[PASS] nothing left half-sent 
+[PASS] no approval lost []
+[PASS] no approval lapsed []
+reconcile decisions: 3; restarts survived; proposals by status: {'applied': 27, 'rejected': 2, 'superseded': 2}
+RESULT: PASS
+grade after crashes: | ALL | 0.424 | +28.1% | 0.273 | +24.4% | 0.536 | +0.7% | 23% | 190 (431) |

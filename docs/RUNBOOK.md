@@ -45,3 +45,16 @@ thresholds, validation n. `controller/cfg.py`: `TENANT_PREFS` (client agreements
 ## Where things are
 `ingest.py` (events → cubes), `learn.py` (cohorts, call-time, caller ID, experiments), `incidents.py`,
 `governance.py` (outbox, routing, apply, reconcile), `loop.py` (orchestration), `view.py` (read-only CLI).
+
+## Reproduce every number in SUBMISSION.md
+```
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m pytest -q tests                              # simulator + controller tests (incl. crash-in-apply)
+scripts/run_scenario.sh scenarios/public_01_dev.yaml             # -> reports/public_01_dev.md
+scripts/run_scenario.sh scenarios/public_02_incidents.yaml       # -> reports/public_02_incidents.md
+scripts/load_test.sh                                             # -> reports/public_03_load.md (+ _grade.md)
+scripts/crash_test.sh                                            # -> reports/crash_test.log (8x kill -9)
+python scripts/make_private_scenarios.py && scripts/aa_suite.sh  # -> reports/aa_false_winners.md
+for s in scenarios/private/priv_{policy,incidents,opposite}.yaml; do scripts/run_scenario.sh $s; done
+scripts/scoreboard.sh                                            # -> reports/scoreboard.md
+```
