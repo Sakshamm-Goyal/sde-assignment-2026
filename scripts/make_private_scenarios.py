@@ -29,6 +29,10 @@ for t in aa["tenants"]:
     for w in t["workflows"]:
         w["did_base_health"] = {}
 save("priv_aa", aa)
+for seed in range(921, 927):  # more A/A worlds: the false-winner rate needs more than one run
+    aa["seed"] = seed
+    save(f"priv_aa_{seed}", copy.deepcopy(aa))
+aa["seed"] = 911
 
 # 2. Policy flip: tighter governance everywhere.
 pf = copy.deepcopy(src)

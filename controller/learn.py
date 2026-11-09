@@ -16,8 +16,8 @@ REST_MIN = 2 * DAY
 PROBE_SHARE = 0.045         # untested caller ID: 4.5% x (0.86 - 0.5 health) / 0.86 ~ 1.9%
 PROBE_MIN_DIALS = 200
 EPS_TOTAL, EPS_ARM = 0.20, 0.10   # exploration: all challengers / one challenger (10% x a 0.88x arm = 1.2%)
-ALPHA = 0.05                # family-wise (Holm) per daily look, one-sided; see SUBMISSION §5 for the trade-off
-MIN_N_PROMOTE, MIN_N_PRUNE = 300, 200
+ALPHA = 0.02                # family-wise (Holm) per daily look, one-sided; ~5 looks -> ~0.1 overall; SUBMISSION §5
+MIN_N_PROMOTE, MIN_N_PRUNE = 400, 200
 MIN_LIFT = 0.03
 HOLDOUT = 0.20              # incumbent share kept after promotion, so decay stays measurable
 MAX_EXPLORE_DAYS = 6
@@ -305,6 +305,8 @@ def evaluate(ctl, wf, cfg, intraday=False) -> list[dict]:
                     # prune early (P(worse) > 0.84): moving traffic back to the incumbent is always safe
                     if st["n_arm"] >= MIN_N_PRUNE and st["z"] < -1.0:
                         st["action"] = "prune"
+                    elif rec["n_arm"] >= 150 and rec["z"] < -1.0:  # stopped working (decay while still exploring)
+                        st["action"] = "prune"
                     elif (now - start) / DAY >= MAX_EXPLORE_DAYS and st["z"] < 0.5:
                         st["action"] = "prune"
                     if st["n_arm"] >= MIN_N_PROMOTE:
@@ -412,7 +414,8 @@ def shares(inc, keep, looks) -> dict:
     if not ch:
         return {inc: 1.0}
     z = {x["arm"]: x for x in looks}
-    good = [a for a in ch if a in z and z[a]["z"] >= 1 and z[a]["n_arm"] >= MIN_N_PRUNE]
+    good = [a for a in ch if a in z and z[a]["z"] >= 1 and z[a]["n_arm"] >= MIN_N_PRUNE
+            and z[a].get("recent_lift", 1) > 0]
     base = min(EPS_ARM, EPS_TOTAL / len(ch))
     w = {a: (PROMISING_SHARE if a in good else base) for a in ch}
     tot = sum(w.values())
