@@ -12,8 +12,10 @@ from . import stats
 from .cfg import DAY, ENG_DIMS, FEATS, dist, match, tv
 
 REST_MIN = 2 * DAY
-PROBE_SHARE = 0.08          # share given to an untested caller ID (cost if it is bad stays under the 2% health bar)
-EPS_TOTAL, EPS_ARM = 0.30, 0.15   # exploration: all challengers together / any single challenger
+# Harm budget: a change may cost at most ~2% caller-ID health / ~1% engagement even if what we try is bad.
+PROBE_SHARE = 0.045         # untested caller ID: 4.5% x (0.86 - 0.5 health) / 0.86 ~ 1.9%
+PROBE_MIN_DIALS = 200
+EPS_TOTAL, EPS_ARM = 0.20, 0.10   # exploration: all challengers / one challenger (10% x a 0.88x arm = 1.2%)
 ALPHA = 0.05                # family-wise (Holm) per daily look, one-sided; see SUBMISSION §5 for the trade-off
 MIN_N_PROMOTE, MIN_N_PRUNE = 300, 200
 MIN_LIFT = 0.03
@@ -167,7 +169,7 @@ def did_plan(ctl, wf, cfg) -> tuple[dict | None, bool, list]:
             setst(did, "rested" if tired else "flagged", ratio, d,
                   f"pickup {ratio:.0%} of other caller IDs over last 3h, z={z:.1f}"
                   + (f", while carrying {share:.0%} of dials" if tired else ""))
-            urgent = urgent or cur.get(did, 0) > PROBE_SHARE + 0.01
+            urgent = urgent or cur.get(did, 0) > 0.1
     for did, (status, since) in list(st.items()):
         if status == "rested" and now - since >= REST_MIN:
             day = did_ratios(s, wf.id, now - DAY)
@@ -176,9 +178,9 @@ def did_plan(ctl, wf, cfg) -> tuple[dict | None, bool, list]:
         if status != "probe":
             continue
         d, c, ratio, z = did_ratios(s, wf.id, since).get(did, (0, 0, 1.0, 0.0))
-        if d >= 300 and ratio >= 0.85 and z > -2:
+        if d >= PROBE_MIN_DIALS and ratio >= 0.85 and z > -2:
             setst(did, "active", ratio, d, f"probe passed: pickup {ratio:.0%} of peers on {d} dials")
-        elif d >= 300 and ratio < 0.75 and z < -2.5:
+        elif d >= PROBE_MIN_DIALS and ratio < 0.75 and z < -2.5:
             setst(did, "flagged", ratio, d, f"probe failed: pickup {ratio:.0%} of peers on {d} dials")
         elif d >= 1500:
             setst(did, "active" if ratio >= 0.8 else "flagged", ratio, d, f"probe inconclusive after {d} dials")
@@ -203,19 +205,23 @@ def did_plan(ctl, wf, cfg) -> tuple[dict | None, bool, list]:
 
 # ----------------------------------------------------------------------------- experiments
 def arm_table(store, wf_id, dim, since_day, cohorts, scope, overridden):
-    """arm -> stratum(day, cohort) -> [dials, connected, engaged], from realised traffic only."""
+    """arm -> stratum(day, cohort, config version) -> [dials, connected, engaged], from realised traffic only.
+
+    Config version is part of the stratum: within one version the allocation is fixed, so per-dial randomisation
+    holds. Without it, a mid-day allocation change confounds arm with hour of day (Simpson's paradox: the old
+    arm's dials sit in the morning, the new arm's in the afternoon)."""
     col = "wm" if dim == "welcome_message" else "voice"
     T = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))
     cache = {}
-    for day, feat, arm, d, c, g in store.q(
-            f"SELECT day, feat, {col}, SUM(dials), SUM(connected), SUM(engaged) FROM eng WHERE wf=? AND day>=? "
-            f"GROUP BY day, feat, {col}", (wf_id, since_day)):
+    for day, ver, feat, arm, d, c, g in store.q(
+            f"SELECT day, cfg_ver, feat, {col}, SUM(dials), SUM(connected), SUM(engaged) FROM eng WHERE wf=? AND "
+            f"day>=? GROUP BY day, cfg_ver, feat, {col}", (wf_id, since_day)):
         coh = cache.get(feat)
         if coh is None:
             coh = cache[feat] = match(cohorts, feat)
         if (scope == "all" and coh in overridden) or (scope != "all" and coh != scope):
             continue
-        x = T[arm][(day, coh)]
+        x = T[arm][(day, coh, ver)]
         x[0] += d
         x[1] += c
         x[2] += g
@@ -283,11 +289,14 @@ def evaluate(ctl, wf, cfg, intraday=False) -> list[dict]:
             arms = arms.split(",") if arms else []
             if status == "exploring":
                 T = arm_table(s, wf.id, dim, start // DAY, cohorts, scope, overridden)
+                Tr = arm_table(s, wf.id, dim, max(start // DAY, today - 2), cohorts, scope, overridden)
                 for arm in arms:
                     if arm == inc:
                         continue
                     st = _stat(T, arm, inc)
-                    st.update(scope=scope, dim=dim)
+                    rec = _stat(Tr, arm, inc)
+                    # novelty guard: a winner must still be winning in the last ~2 days, not just on average
+                    st.update(scope=scope, dim=dim, recent_lift=rec["rel_lift"], recent_n=rec["n_arm"])
                     looks.append(st)
                     if intraday:
                         if st["n_arm"] >= 150 and st["se"] and (st["diff"] + 0.10 * st["rate_inc"]) / st["se"] < -2.33:
@@ -346,7 +355,8 @@ def evaluate(ctl, wf, cfg, intraday=False) -> list[dict]:
     winners = defaultdict(list)
     for t, ok in zip(tests, sig):
         t["significant"] = ok
-        if ok and t["rel_lift"] >= MIN_LIFT and _guard_ok(t, wf.guard_drop):
+        fresh = t.get("recent_n", 0) < 100 or t.get("recent_lift", 1) > 0
+        if ok and t["rel_lift"] >= MIN_LIFT and _guard_ok(t, wf.guard_drop) and fresh:
             winners[(t.get("parent", t["scope"]), t["dim"])].append(t)
     for (scope, dim), r in exps.items():
         if r[2] != "exploring":
@@ -391,7 +401,8 @@ def _promote_intent(wf, scope, dim, inc, t):
             "summary": f"promote {dim} {t['arm']} to {round(100 * (1 - HOLDOUT))}% "
                        f"({t['rel_lift']:+.1%} engagement vs {inc})" + (f" for cohort {scope}" if scope != "all" else ""),
             "rationale": f"{t['arm']} {t['rel_lift']:+.1%} engagement vs {inc} on {t['n_arm']} vs {t['n_inc']} "
-                         f"connected calls, z={t['z']}, significant after Holm at alpha={ALPHA}; pickup guardrail ok "
+                         f"connected calls, z={t['z']}, significant after Holm at alpha={ALPHA}; still ahead over the last 2 days "
+                         f"({t.get('recent_lift', 0):+.1%}); pickup guardrail ok "
                          f"({t['pickup_diff']:+.3f}). {inc} keeps {round(100 * HOLDOUT)}% as a holdout to catch decay."}
 
 
