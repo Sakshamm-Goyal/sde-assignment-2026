@@ -1,6 +1,6 @@
 # Outcome-First Agent Loop — Submission
 
-**Name:** Saksham Goyal · **Date:** 2026-11-09 · **Hours actually spent (be honest):** _fill in_ ·
+**Name:** Saksham Goyal · **Date:** 2026-11-09 · **Hours actually spent (be honest):** ~9 ·
 **Language / storage:** Python ≥3.10 (stdlib + `httpx`, already in requirements) / one SQLite file (WAL)
 
 ---
