@@ -1,7 +1,7 @@
 """SQLite store: the controller's only state. One file, WAL, single writer.
 
 Analysis never reads raw calls: it reads three small aggregate cubes
-  eng   (wf, day, feat, welcome, voice, prompt)      -> welcome/voice experiments, dry runs
+  eng   (wf, day, feat, welcome, voice, prompt, cfg_ver) -> welcome/voice experiments, dry runs
   pick  (wf, day, hour, feat, caller_id)              -> call-time, cohorts
   ticks (wf, 15-min bucket, caller_id, prompt)        -> caller-ID health, hallucination, before/after
 `calls` keeps one row per live dial so "what did customer X hear on day D, and why" is answerable.
@@ -22,8 +22,9 @@ CREATE TABLE IF NOT EXISTS campaigns(campaign_id TEXT PRIMARY KEY, wf TEXT, day 
 CREATE TABLE IF NOT EXISTS leads(lead_id TEXT PRIMARY KEY, wf TEXT, campaign_id TEXT, person_id TEXT, feat TEXT,
   day INTEGER);
 CREATE INDEX IF NOT EXISTS leads_day ON leads(day);
-CREATE TABLE IF NOT EXISTS eng(wf TEXT, day INTEGER, feat TEXT, wm TEXT, voice TEXT, prompt TEXT,
-  dials INTEGER, connected INTEGER, engaged INTEGER, flags INTEGER, PRIMARY KEY(wf, day, feat, wm, voice, prompt));
+CREATE TABLE IF NOT EXISTS eng(wf TEXT, day INTEGER, feat TEXT, wm TEXT, voice TEXT, prompt TEXT, cfg_ver INTEGER,
+  dials INTEGER, connected INTEGER, engaged INTEGER, flags INTEGER,
+  PRIMARY KEY(wf, day, feat, wm, voice, prompt, cfg_ver));
 CREATE TABLE IF NOT EXISTS pick(wf TEXT, day INTEGER, hour INTEGER, feat TEXT, did TEXT,
   dials INTEGER, connected INTEGER, engaged INTEGER, PRIMARY KEY(wf, day, hour, feat, did));
 CREATE TABLE IF NOT EXISTS ticks(wf TEXT, minute INTEGER, did TEXT, prompt TEXT,

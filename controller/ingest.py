@@ -14,7 +14,8 @@ from collections import defaultdict
 from .cfg import DAY, feat_key
 
 UPSERT = {
-    "eng": "INSERT INTO eng VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(wf, day, feat, wm, voice, prompt) DO UPDATE SET "
+    "eng": "INSERT INTO eng VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(wf, day, feat, wm, voice, prompt, cfg_ver) "
+           "DO UPDATE SET "
            "dials=dials+excluded.dials, connected=connected+excluded.connected, engaged=engaged+excluded.engaged, "
            "flags=flags+excluded.flags",
     "pick": "INSERT INTO pick VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(wf, day, hour, feat, did) DO UPDATE SET "
@@ -97,7 +98,7 @@ class Ingestor:
                 feat = lf.get(e["lead_id"], UNKNOWN)
                 c, g = e["connected"], e["engaged"]
                 fl = 1 if (c and e["qa"] and e["qa"].get("hallucination_flag")) else 0
-                a = eng[(wf, day, feat, v["welcome_message"], v["voice"], v["prompt_version"])]
+                a = eng[(wf, day, feat, v["welcome_message"], v["voice"], v["prompt_version"], e["config_version"])]
                 a[0] += 1; a[1] += c; a[2] += g; a[3] += fl
                 b = pick[(wf, day, hour, feat, v["caller_id"])]
                 b[0] += 1; b[1] += c; b[2] += g

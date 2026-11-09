@@ -201,6 +201,7 @@ class Controller:
         cfg, ver = c["config"], c["version"]
         if wf.in_window(now) or wf.in_window(now - 60):
             incidents.check(self, wf, cfg)
+            incidents.check_engagement(self, wf, cfg)
         incidents.step(self, wf, cfg)
         cfg, ver = self.cfgs[wf.id]["config"], self.cfgs[wf.id]["version"]
         if wf.in_window(now):
@@ -318,7 +319,7 @@ class Controller:
                 continue
             p0, p1 = x0 / n0, x1 / n1
             z = (p1 - p0) / math.sqrt(max(p0 * (1 - p0), 1e-6) * (1 / n0 + 1 / n1))
-            if abs(z) > 4:
+            if z < -4:  # only drops page anyone's attention; improvements are expected from our own changes
                 s.decide(self.now, wf.id, "kpi_drift", f"{name} {p1:.3f} yesterday vs {p0:.3f} prior 3 days (z={z:.1f})")
                 s.alert(self.now, "info", wf.id, f"{name} drift {p0:.3f} -> {p1:.3f} (z={z:.1f}); morning review")
 
@@ -330,9 +331,12 @@ class Controller:
             (self.now, time.time(), n, round(ingest_s, 3), round(decide_s, 3), round(adv_s, 3), self.credits,
              pending, round(rss_mb(), 1)))
         s.set_meta("last_minute", self.now)
-        last = s.one("SELECT MAX(until_minute) FROM chunks WHERE kind='events'")[0]
-        if last is not None and self.now - last > 60 and n == 0 and self.now > 0:
-            s.alert(self.now, "page", None, f"ingest lag {self.now - last} sim-minutes: chunks not arriving")
+        # lag = ticks inside a dialling window that produced no events at all (the dialler or the feed is down)
+        dialling = any(w.in_window(self.now - self.tick) for w in self.wfs.values()) and self.now > 0
+        quiet = (s.meta("quiet_ticks", 0) + 1) if (dialling and n == 0) else 0
+        s.set_meta("quiet_ticks", quiet)
+        if quiet == 4:
+            s.alert(self.now, "page", None, "no events for 4 ticks inside a dialling window: ingest or dialler down")
         if self.credits < 8 and not s.meta("alert_credits"):
             s.set_meta("alert_credits", True)
             s.alert(self.now, "page", None, f"credits at {self.credits}: below the incident reserve")
