@@ -95,11 +95,44 @@ def check(ctl, wf, cfg):
     s.set_meta(key, st)
 
 
+def check_engagement(ctl, wf, cfg):
+    """After any prompt change: engagement under the new prompt vs the 2 days before it (pre/post, so a high bar:
+    >8% relative drop and z < -3 on >= 400 connected calls). Validation can't see this failure mode."""
+    s, now = ctl.store, ctl.now
+    st = s.meta(f"cusum:{wf.id}")
+    if not st or not st.get("since") or now - st["since"] > 2 * DAY or s.meta(f"eng_checked:{wf.id}") == st["since"]:
+        return
+    if s.one("SELECT 1 FROM incidents WHERE wf=? AND status NOT IN ('closed','failed')", (wf.id,)):
+        return
+    p = cfg["prompt_version"]
+    post = s.one("SELECT SUM(connected), SUM(engaged) FROM ticks WHERE wf=? AND prompt=? AND minute>=?",
+                 (wf.id, p, st["since"] - 30))
+    pre = s.one("SELECT SUM(connected), SUM(engaged) FROM ticks WHERE wf=? AND prompt!=? AND minute>=? AND minute<?",
+                (wf.id, p, st["since"] - 2 * DAY, st["since"]))
+    if not post[0] or post[0] < 400 or not pre[0] or pre[0] < 400:
+        return
+    p1, p0 = post[1] / post[0], pre[1] / pre[0]
+    z = (p1 - p0) / math.sqrt(p0 * (1 - p0) * (1 / post[0] + 1 / pre[0]))
+    fired = p1 < p0 * 0.92 and z < -3
+    if fired or post[0] >= 1500:  # re-checked every tick until conclusive; one decision row when it settles
+        s.set_meta(f"eng_checked:{wf.id}", st["since"])
+        s.decide(now, wf.id, "prompt_engagement_check", f"engagement on {p} {p1:.1%} vs {p0:.1%} before the "
+                                                        f"change (z={z:.1f}, n={post[0]})")
+    if fired:
+        data = {"bad_prompt": p, "rate": round(p1, 4), "baseline": round(p0, 4), "n": post[0], "tried": [],
+                "credits": 0, "reason": "engagement"}
+        s.x("INSERT INTO incidents(wf, kind, status, opened_minute, data) VALUES(?,?,?,?,?)",
+            (wf.id, "engagement", "open", now, json.dumps(data)))
+        s.decide(now, wf.id, "incident_opened", f"engagement fell to {p1:.1%} from {p0:.1%} after prompt {p} went "
+                                                f"live (z={z:.1f}); safe is not enough if nobody stays on the call", data)
+        s.alert(now, "warn", wf.id, f"engagement drop after prompt change to {p}: {p0:.1%} -> {p1:.1%}")
+
+
 def step(ctl, wf, cfg):
     """Advance every open incident on this workflow by one state."""
     s, now = ctl.store, ctl.now
     for iid, status, opened, raw in s.q("SELECT id, status, opened_minute, data FROM incidents WHERE wf=? AND "
-                                        "kind='hallucination' AND status NOT IN ('closed','failed')", (wf.id,)):
+                                        "status NOT IN ('closed','failed')", (wf.id,)):
         d = json.loads(raw)
         new = _step(ctl, wf, cfg, iid, status, d)
         s.x("UPDATE incidents SET status=?, data=?, closed_minute=? WHERE id=?",

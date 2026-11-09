@@ -219,9 +219,11 @@ class Gov:
         live = d.get("live_evidence")
         it = {"type": "prompt", "from": d["bad_prompt"], "to": d["candidate"], "auto_eligible": True,
               "validation": v, "live": live, "impact": 1.0,
-              "summary": f"switch prompt {d['bad_prompt']} -> {d['candidate']} (hallucination incident)",
-              "rationale": f"hallucination flags at {d['rate']:.1%} on {d['bad_prompt']} vs {d['baseline']:.1%} "
-                           f"baseline over {d['n']} connected calls. {d['candidate']} validated "
+              "summary": f"switch prompt {d['bad_prompt']} -> {d['candidate']} ({d.get('reason', 'hallucination')} incident)",
+              "rationale": (f"engagement fell to {d['rate']:.1%} from {d['baseline']:.1%} on {d['bad_prompt']} "
+                            if d.get("reason") == "engagement" else
+                            f"hallucination flags at {d['rate']:.1%} on {d['bad_prompt']} vs {d['baseline']:.1%} baseline ")
+                           + f"over {d['n']} connected calls. {d['candidate']} validated "
                            f"{v['pass_rate']:.3f} on n={v['n']} ({v['validation_run_id']}); "
                            + ("it ran live before with normal hallucination and engagement rates."
                               if live else "engagement will be verified after the change.")}
