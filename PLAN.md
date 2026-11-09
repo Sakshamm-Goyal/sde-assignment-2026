@@ -1,6 +1,8 @@
 # Build plan — Outcome-First Agent Loop
 
-Working plan, not the submission. Everything here feeds `SUBMISSION.md`.
+Working plan, written before the code. Kept as-is to show how the thinking started; where the shipped
+system differs (α 0.02/look, 10% exploration arms, CUSUM incidents, config-version strata), `SUBMISSION.md`
+is the source of truth and explains why each changed.
 Numbers marked **(measured)** come from baseline runs on this laptop on 2026-11-09.
 
 ---
